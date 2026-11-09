@@ -634,7 +634,7 @@ ${differential}
 
 ${hfNotes.length?
 "心不全に関する参考評価：\n"+
-hfNotes.map(x+"").join("\n"):""}
+hfNotes.map(x => "・" + x).join("\n"):""}
 
 P（検査・評価候補）
 ${tests[chief].map(x=>"・"+x).join("\n")}

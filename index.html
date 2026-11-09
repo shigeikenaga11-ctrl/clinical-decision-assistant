@@ -468,15 +468,24 @@ let idx=0;
 let answers={};
 let selected=[];
 
+
+
 function activeQuestions(){
+  if(!chief)return [];
   return Q[chief].filter(q=>!q.when||q.when(answers));
 }
+
+// 質問IDと回答履歴で進行を管理する
+let currentQuestionId=null;
+let questionHistory=[];
 
 function reset(){
   chief=null;
   idx=0;
   answers={};
   selected=[];
+  currentQuestionId=null;
+  questionHistory=[];
   $("results").classList.add("hidden");
   render();
 }
@@ -487,75 +496,122 @@ function drawOptions(choices,multi,callback){
   choices.forEach(choice=>{
     const button=document.createElement("button");
     button.type="button";
-    button.className="option"+(selected.includes(choice)?" selected":"");
+    button.className="option"+
+      (selected.includes(choice)?" selected":"");
     button.textContent=choice;
-    button.setAttribute("aria-pressed",String(selected.includes(choice)));
+    button.setAttribute(
+      "aria-pressed",
+      String(selected.includes(choice))
+    );
     button.onclick=()=>callback(choice);
     $("options").append(button);
   });
 }
 
 function render(){
-  const start=!chief;
   $("results").classList.add("hidden");
-  $("back").disabled=start;
   $("next").classList.add("hidden");
 
-  if(start){
+  if(!chief){
     $("heading").textContent="主訴を選択";
-    $("counter").textContent="最初に主訴を選択してください";
+    $("counter").textContent="主訴を選択してください";
     $("question").textContent="主訴は何ですか？";
     $("progress").style.width="0%";
+    $("back").disabled=true;
+
     selected=[];
 
     drawOptions(Object.values(names),false,choice=>{
-      chief=Object.keys(names).find(k=>names[k]===choice);
-      idx=0;
+      chief=Object.keys(names).find(
+        key=>names[key]===choice
+      );
       answers={};
+      questionHistory=[];
+      currentQuestionId=Q[chief][0].id;
       render();
     });
     return;
   }
 
+  $("back").disabled=false;
+
   const questions=activeQuestions();
-  const q=questions[idx];
+  const position=questions.findIndex(
+    q=>q.id===currentQuestionId
+  );
 
-  $("heading").textContent=names[chief]+"：選択式問診";
-  $("counter").textContent=`質問 ${idx+1} / ${questions.length}`;
-  $("progress").style.width=`${100*idx/questions.length}%`;
-  $("question").textContent=q.label+(q.multi?"（複数選択可）":"");
+  if(position<0){
+    // 条件変更で質問が消えた場合は先頭に戻す
+    currentQuestionId=questions[0].id;
+    render();
+    return;
+  }
 
-  selected=Array.isArray(answers[q.id])?[...answers[q.id]]:[];
+  idx=position;
+  const q=questions[position];
 
-  const handleChoice=choice=>{
+  $("heading").textContent=
+    names[chief]+"：選択式問診";
+  $("counter").textContent=
+    `質問 ${position+1} / ${questions.length}`;
+  $("progress").style.width=
+    `${100*position/questions.length}%`;
+
+  $("question").textContent=
+    q.label+(q.multi?"（複数選択可）":"");
+
+  selected=Array.isArray(answers[q.id])
+    ?[...answers[q.id]]
+    :[];
+
+  function handleChoice(choice){
     if(q.multi){
       if(choice==="なし"||choice==="未評価"){
         selected=[choice];
       }else{
-        selected=selected.filter(x=>x!=="なし"&&x!=="未評価");
+        selected=selected.filter(
+          x=>x!=="なし"&&x!=="未評価"
+        );
         selected=selected.includes(choice)
           ?selected.filter(x=>x!==choice)
           :[...selected,choice];
       }
 
       drawOptions(q.choices,true,handleChoice);
-      $("next").classList.toggle("hidden",selected.length===0);
+      $("next").classList.toggle(
+        "hidden",selected.length===0
+      );
     }else{
       answers[q.id]=choice;
-      advance();
+      goNext();
     }
-  };
+  }
 
   drawOptions(q.choices,!!q.multi,handleChoice);
 
   if(q.multi){
-    $("next").classList.toggle("hidden",selected.length===0);
+    $("next").classList.toggle(
+      "hidden",selected.length===0
+    );
   }
 }
 
-function advance(){
-  if(idx<activeQuestions().length-1){
-    idx++;
+function goNext(){
+  const questions=activeQuestions();
+  const position=questions.findIndex(
+    q=>q.id===currentQuestionId
+  );
+
+  if(position<0){
+    alert("質問の位置を確認できません。");
+    return;
+  }
+
+  const nextQuestion=questions[position+1];
+
+  if(nextQuestion){
+    questionHistory.push(currentQuestionId);
+    currentQuestionId=nextQuestion.id;
     render();
   }else{
     showResults();
@@ -563,23 +619,29 @@ function advance(){
 }
 
 $("next").onclick=()=>{
-  const q=activeQuestions()[idx];
-  if(!selected.length)return;
-  answers[q.id]=[...selected];
-  advance();
+  if(!chief||!currentQuestionId||!selected.length){
+    return;
+  }
+
+  answers[currentQuestionId]=[...selected];
+  goNext();
 };
 
 $("back").onclick=()=>{
   if(!chief)return;
-  if(idx===0){
+
+  if(questionHistory.length===0){
     reset();
-  }else{
-    idx--;
-    render();
+    return;
   }
+
+  currentQuestionId=questionHistory.pop();
+  render();
 };
 
 $("restart").onclick=reset;
+  
+
 
 function appendDifferentials(root){
   const heading=document.createElement("h3");
